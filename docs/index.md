@@ -1,4 +1,4 @@
-﻿![TIET Logo](assets/tiet-logo.svg){ .tiet-logo }
+﻿![TIET Logo](assets/tiet-logo.svg)
 
 **UCS503: Software Engineering (Project)**  
 **TIET Patiala**
