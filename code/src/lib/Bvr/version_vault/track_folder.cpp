@@ -182,54 +182,108 @@ bool hasFolderChanged(
 
 #ifdef FOLDER_TRACKER_TEST
 
-int main() {
+int main(int argc, char* argv[]) {
 
-    const string folder =
-        "/Users/tanaysingh/Desktop/test_folder";
+    if (argc < 3) {
+        cout << "Usage:\n";
+        cout << "  ./track_folder track <folder_path>\n";
+        cout << "  ./track_folder status <folder_path>\n";
+        cout << "  ./track_folder save <folder_path> <message>\n";
+        cout << "  ./track_folder history <folder_path>\n";
+        cout << "  ./track_folder restore <folder_path> <commit_hash>\n";
+        return 1;
+    }
 
-    cout << "\n=== VersionVault Folder Tracker Test ===\n\n";
-
-
-    // Track folder
-    cout << "Initializing folder...\n";
-
-    if (trackFolder(folder))
-        cout << "SUCCESS: Folder initialized as repository.\n";
-    else
-        cout << "FAILED: Could not initialize folder.\n";
-
-
-    // Check changes
-    cout << "\nChecking folder status...\n";
-
-    if (hasFolderChanged(folder))
-        cout << "Changes detected.\n";
-    else
-        cout << "No changes detected.\n";
+    string command = argv[1];
+    string folderPath = argv[2];
 
 
-    // Save version
-    cout << "\nSaving folder version...\n";
+    // TRACK FOLDER
+    if (command == "track") {
 
-    if (saveFolderVersion(folder, "Initial Version"))
-        cout << "SUCCESS: Version saved.\n";
-    else
-        cout << "FAILED: Could not save version.\n";
-
-
-    // Get history
-    cout << "\nFolder History:\n";
-
-    vector<string> history =
-        getFolderHistory(folder);
-
-    for (int i = 0; i < history.size(); i++) {
-        cout << i + 1 << ". "
-             << history[i] << "\n";
+        if (trackFolder(folderPath))
+            cout << "SUCCESS: Folder is now being tracked.\n";
+        else
+            cout << "FAILED: Could not track folder.\n";
     }
 
 
-    cout << "\n=== Test Complete ===\n";
+    // CHECK STATUS
+    else if (command == "status") {
+
+        if (hasFolderChanged(folderPath))
+            cout << "Changes detected.\n";
+        else
+            cout << "No changes detected.\n";
+    }
+
+
+    // SAVE VERSION
+    else if (command == "save") {
+
+        if (argc < 4) {
+            cout << "Error: Version message required.\n";
+            return 1;
+        }
+
+        string message = argv[3];
+
+        if (saveFolderVersion(folderPath, message))
+            cout << "SUCCESS: Folder version saved.\n";
+        else
+            cout << "FAILED: Could not save version.\n";
+    }
+
+
+    // VIEW HISTORY
+    else if (command == "history") {
+
+        vector<string> history =
+            getFolderHistory(folderPath);
+
+        if (history.empty()) {
+            cout << "No versions found.\n";
+            return 0;
+        }
+
+        cout << "Folder Version History:\n";
+
+        for (int i = 0; i < history.size(); i++) {
+            cout << i + 1
+                 << ". "
+                 << history[i]
+                 << "\n";
+        }
+    }
+
+
+    // RESTORE VERSION
+    else if (command == "restore") {
+
+        if (argc < 4) {
+            cout << "Error: Commit hash required.\n";
+            return 1;
+        }
+
+        string commitHash = argv[3];
+
+        if (restoreFolderVersion(
+                folderPath,
+                commitHash
+            )) {
+
+            cout << "SUCCESS: Folder restored.\n";
+
+        } else {
+
+            cout << "FAILED: Could not restore version.\n";
+        }
+    }
+
+
+    else {
+        cout << "Unknown command: " << command << "\n";
+    }
 
     return 0;
 }
