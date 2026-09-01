@@ -9,6 +9,11 @@ import sys
 #     getHistory,
 #     restoreVersion
 # )
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+
 from src.lib.Bvr.version_vault.core import (
     initRepo,
     trackFile,
