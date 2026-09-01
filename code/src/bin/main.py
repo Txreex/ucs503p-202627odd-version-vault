@@ -17,7 +17,7 @@ from src.lib.Bvr.version_vault.core import (
     restoreVersion
 )
 
-REPO_PATH = "REPO_PATH = "/tmp/version_vault_repo"
+REPO_PATH = "/tmp/version_vault_repo"
 
 
 def printUsage():
