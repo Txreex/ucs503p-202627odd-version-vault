@@ -11,12 +11,18 @@ from src.lib.Bvr.version_vault.core import (
     restoreVersion
 )
 
-from src.lib.Bvr.version_vault.folder_tracker import (
+from src.lib.Bvr.version_vault.track_folder import (
     trackFolder,
     saveFolderVersion,
     getFolderHistory,
     restoreFolderVersion,
     hasFolderChanged
+)
+
+from src.lib.Bvr.version_vault.database import (
+    addItem,
+    getItemByPath,
+    generateItemId
 )
 
 
@@ -29,9 +35,9 @@ VersionVault CLI
 
 Single File Commands:
     vv init
-    vv track <file-id> <file-path>
-    vv save <file-id> <file-path>
-    vv history <file-id>
+    vv track <file-path>
+    vv save <file-path>
+    vv history <file-path>
     vv restore <commit-hash> <file-path>
 
 Folder Commands:
@@ -52,7 +58,7 @@ def main():
     command = sys.argv[1]
 
     # ========================================================
-    # SINGLE FILE COMMANDS
+    # INIT
     # ========================================================
 
     # vv init
@@ -63,48 +69,118 @@ def main():
         else:
             print("Failed to initialize repository.")
 
-    # vv track f1 notes.txt
+    # ========================================================
+    # SINGLE FILE TRACK
+    # ========================================================
+
+    # vv track <file-path>
     elif command == "track":
 
-        if len(sys.argv) != 4:
-            print("Usage: vv track <file-id> <file-path>")
+        if len(sys.argv) != 3:
+            print("Usage: vv track <file-path>")
             return 1
 
-        if trackFile(
-            REPO_PATH,
-            sys.argv[2],
-            sys.argv[3]
-        ):
-            print("File tracked successfully.")
-        else:
-            print("Failed to track file.")
+        filePath = sys.argv[2]
 
-    # vv save f1 notes.txt
+        # Check whether this file is already tracked
+        existingItem = getItemByPath(filePath)
+
+        if existingItem:
+            print(
+                f"Error: File is already being tracked "
+                f"with ID {existingItem[0]}."
+            )
+            return 1
+
+        # Generate VersionVault ID
+        fileId = generateItemId("file")
+
+        # Track the file using Git
+        if not trackFile(
+            REPO_PATH,
+            fileId,
+            filePath
+        ):
+            print("Failed to track file.")
+            return 1
+
+        # Store metadata in SQLite
+        if not addItem(
+            fileId,
+            "file",
+            filePath
+        ):
+            print("Failed to register file in database.")
+            return 1
+
+        print(
+            f"File tracked successfully with ID: {fileId}"
+        )
+
+    # ========================================================
+    # SINGLE FILE SAVE
+    # ========================================================
+
+    # vv save <file-path>
     elif command == "save":
 
-        if len(sys.argv) != 4:
-            print("Usage: vv save <file-id> <file-path>")
+        if len(sys.argv) != 3:
+            print("Usage: vv save <file-path>")
             return 1
+
+        filePath = sys.argv[2]
+
+        # Find the VersionVault ID using the path
+        item = getItemByPath(filePath)
+
+        if not item:
+            print("Error: File is not being tracked.")
+            return 1
+
+        if item[1] != "file":
+            print("Error: Path is not a tracked file.")
+            return 1
+
+        fileId = item[0]
 
         if saveVersion(
             REPO_PATH,
-            sys.argv[2],
-            sys.argv[3]
+            fileId,
+            filePath
         ):
             print("New version saved successfully.")
         else:
             print("Failed to save version.")
 
-    # vv history f1
+    # ========================================================
+    # SINGLE FILE HISTORY
+    # ========================================================
+
+    # vv history <file-path>
     elif command == "history":
 
         if len(sys.argv) != 3:
-            print("Usage: vv history <file-id>")
+            print("Usage: vv history <file-path>")
             return 1
+
+        filePath = sys.argv[2]
+
+        # Find the VersionVault ID
+        item = getItemByPath(filePath)
+
+        if not item:
+            print("Error: File is not being tracked.")
+            return 1
+
+        if item[1] != "file":
+            print("Error: Path is not a tracked file.")
+            return 1
+
+        fileId = item[0]
 
         history = getHistory(
             REPO_PATH,
-            sys.argv[2]
+            fileId
         )
 
         if not history:
@@ -112,29 +188,50 @@ def main():
             return 0
 
         print("\nVersion History")
-        print("===============")
+        print("================")
 
         for i, commit in enumerate(history):
             print(f"{i + 1}. {commit}")
+
+    # ========================================================
+    # SINGLE FILE RESTORE
+    # ========================================================
 
     # vv restore <commit-hash> <file-path>
     elif command == "restore":
 
         if len(sys.argv) != 4:
-            print("Usage: vv restore <commit-hash> <file-path>")
+            print(
+                "Usage: vv restore "
+                "<commit-hash> <file-path>"
+            )
+            return 1
+
+        commitHash = sys.argv[2]
+        filePath = sys.argv[3]
+
+        # Make sure the file is tracked
+        item = getItemByPath(filePath)
+
+        if not item:
+            print("Error: File is not being tracked.")
+            return 1
+
+        if item[1] != "file":
+            print("Error: Path is not a tracked file.")
             return 1
 
         if restoreVersion(
             REPO_PATH,
-            sys.argv[2],
-            sys.argv[3]
+            commitHash,
+            filePath
         ):
             print("Version restored successfully.")
         else:
             print("Failed to restore version.")
 
     # ========================================================
-    # FOLDER COMMANDS
+    # FOLDER TRACK
     # ========================================================
 
     # vv track-folder <folder-path>
@@ -144,10 +241,43 @@ def main():
             print("Usage: vv track-folder <folder-path>")
             return 1
 
-        if trackFolder(sys.argv[2]):
-            print("SUCCESS: Folder is now being tracked.")
-        else:
+        folderPath = sys.argv[2]
+
+        # Check if folder is already tracked
+        existingItem = getItemByPath(folderPath)
+
+        if existingItem:
+            print(
+                f"Error: Folder is already being tracked "
+                f"with ID {existingItem[0]}."
+            )
+            return 1
+
+        # Initialize Git inside the folder
+        if not trackFolder(folderPath):
             print("FAILED: Could not track folder.")
+            return 1
+
+        # Generate VersionVault folder ID
+        folderId = generateItemId("folder")
+
+        # Store folder metadata
+        if not addItem(
+            folderId,
+            "folder",
+            folderPath
+        ):
+            print("FAILED: Could not register folder.")
+            return 1
+
+        print(
+            f"SUCCESS: Folder is now being tracked "
+            f"with ID: {folderId}"
+        )
+
+    # ========================================================
+    # FOLDER STATUS
+    # ========================================================
 
     # vv status <folder-path>
     elif command == "status":
@@ -156,34 +286,88 @@ def main():
             print("Usage: vv status <folder-path>")
             return 1
 
-        if hasFolderChanged(sys.argv[2]):
+        folderPath = sys.argv[2]
+
+        # Make sure folder is tracked
+        item = getItemByPath(folderPath)
+
+        if not item:
+            print("Error: Folder is not being tracked.")
+            return 1
+
+        if item[1] != "folder":
+            print("Error: Path is not a tracked folder.")
+            return 1
+
+        if hasFolderChanged(folderPath):
             print("Changes detected.")
         else:
             print("No changes detected.")
+
+    # ========================================================
+    # FOLDER SAVE
+    # ========================================================
 
     # vv save-folder <folder-path> "<message>"
     elif command == "save-folder":
 
         if len(sys.argv) != 4:
-            print("Usage: vv save-folder <folder-path> \"<message>\"")
+            print(
+                'Usage: vv save-folder '
+                '<folder-path> "<message>"'
+            )
+            return 1
+
+        folderPath = sys.argv[2]
+        message = sys.argv[3]
+
+        # Make sure folder is tracked
+        item = getItemByPath(folderPath)
+
+        if not item:
+            print("Error: Folder is not being tracked.")
+            return 1
+
+        if item[1] != "folder":
+            print("Error: Path is not a tracked folder.")
             return 1
 
         if saveFolderVersion(
-            sys.argv[2],
-            sys.argv[3]
+            folderPath,
+            message
         ):
             print("SUCCESS: Folder version saved.")
         else:
             print("FAILED: Could not save version.")
 
+    # ========================================================
+    # FOLDER HISTORY
+    # ========================================================
+
     # vv history-folder <folder-path>
     elif command == "history-folder":
 
         if len(sys.argv) != 3:
-            print("Usage: vv history-folder <folder-path>")
+            print(
+                "Usage: vv history-folder "
+                "<folder-path>"
+            )
             return 1
 
-        history = getFolderHistory(sys.argv[2])
+        folderPath = sys.argv[2]
+
+        # Make sure folder is tracked
+        item = getItemByPath(folderPath)
+
+        if not item:
+            print("Error: Folder is not being tracked.")
+            return 1
+
+        if item[1] != "folder":
+            print("Error: Path is not a tracked folder.")
+            return 1
+
+        history = getFolderHistory(folderPath)
 
         if not history:
             print("No versions found.")
@@ -195,16 +379,37 @@ def main():
         for i, commit in enumerate(history):
             print(f"{i + 1}. {commit}")
 
+    # ========================================================
+    # FOLDER RESTORE
+    # ========================================================
+
     # vv restore-folder <folder-path> <commit-hash>
     elif command == "restore-folder":
 
         if len(sys.argv) != 4:
-            print("Usage: vv restore-folder <folder-path> <commit-hash>")
+            print(
+                "Usage: vv restore-folder "
+                "<folder-path> <commit-hash>"
+            )
+            return 1
+
+        folderPath = sys.argv[2]
+        commitHash = sys.argv[3]
+
+        # Make sure folder is tracked
+        item = getItemByPath(folderPath)
+
+        if not item:
+            print("Error: Folder is not being tracked.")
+            return 1
+
+        if item[1] != "folder":
+            print("Error: Path is not a tracked folder.")
             return 1
 
         if restoreFolderVersion(
-            sys.argv[2],
-            sys.argv[3]
+            folderPath,
+            commitHash
         ):
             print("SUCCESS: Folder restored.")
         else:
