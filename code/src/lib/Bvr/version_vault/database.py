@@ -133,3 +133,36 @@ def getAllItems():
     connection.close()
 
     return items
+
+
+def generateItemId(itemType):
+    connection = getConnection()
+
+    prefix = "f" if itemType == "file" else "d"
+
+    cursor = connection.execute(
+        """
+        SELECT item_id
+        FROM tracked_items
+        WHERE item_type = ?
+        """,
+        (itemType,)
+    )
+
+    items = cursor.fetchall()
+
+    connection.close()
+
+    maxNumber = 0
+
+    for item in items:
+        itemId = item[0]
+
+        if itemId.startswith(prefix):
+            try:
+                number = int(itemId[1:])
+                maxNumber = max(maxNumber, number)
+            except ValueError:
+                pass
+
+    return f"{prefix}{maxNumber + 1}"
