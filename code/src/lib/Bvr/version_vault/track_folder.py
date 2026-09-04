@@ -42,10 +42,27 @@ def trackFolder(folderPath):
         print("Folder is already being tracked.")
         return True
 
-    return executeCommand(
+    # Initialize Git repository
+    if not executeCommand(
         ["git", "init", str(folder)]
-    )
+    ):
+        return False
 
+    # Add existing files
+    if not executeCommand(
+        ["git", "add", "."],
+        cwd=folder
+    ):
+        return False
+
+    # Create initial version
+    if not executeCommand(
+        ["git", "commit", "-m", "Initial Version"],
+        cwd=folder
+    ):
+        return False
+
+    return True
 
 def saveFolderVersion(folderPath, message="New folder version"):
     folder = Path(folderPath).expanduser()
