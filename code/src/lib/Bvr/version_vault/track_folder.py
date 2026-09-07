@@ -57,7 +57,7 @@ def trackFolder(folderPath):
 
     # Create initial version
     if not executeCommand(
-        ["git", "commit", "-m", "Initial Version"],
+        ["git", "commit", "--allow-empty", "-m", "Initial Version"],
         cwd=folder
     ):
         return False

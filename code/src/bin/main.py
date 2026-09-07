@@ -211,15 +211,7 @@ def main():
         filePath = sys.argv[3]
 
         # Make sure the file is tracked
-        item = getItemByPath(filePath)
 
-        if not item:
-            print("Error: File is not being tracked.")
-            return 1
-
-        if item[1] != "file":
-            print("Error: Path is not a tracked file.")
-            return 1
 
         if restoreVersion(
             REPO_PATH,
@@ -232,7 +224,7 @@ def main():
 
     # ========================================================
     # FOLDER TRACK
-    # ========================================================
+    # ========================================================m
 
     # vv track-folder <folder-path>
     elif command == "track-folder":

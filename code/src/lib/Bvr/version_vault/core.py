@@ -149,12 +149,35 @@ def getHistory(repoPath, fileId):
 
 
 def restoreVersion(repoPath, commitHash, filePath):
-    fileName = Path(filePath).name
-
-    command = (
-        f'cd "{repoPath}" && '
-        f'git show {commitHash}:{fileName} > "{filePath}"'
+    result = subprocess.run(
+        ["git", "ls-tree", "--name-only", commitHash],
+        cwd=repoPath,
+        capture_output=True,
+        text=True
     )
 
-    return executeCommand(command)
+    if result.returncode != 0:
+        return False
+
+    files = result.stdout.splitlines()
+
+    if not files:
+        return False
+
+    fileName = files[0]
+
+    result = subprocess.run(
+        ["git", "show", f"{commitHash}:{fileName}"],
+        cwd=repoPath,
+        capture_output=True
+    )
+
+    if result.returncode != 0:
+        return False
+
+    try:
+        Path(filePath).write_bytes(result.stdout)
+        return True
+    except OSError:
+        return False
 
