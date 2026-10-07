@@ -104,6 +104,23 @@ def getFolderHistory(folderPath):
 
     return result.stdout.splitlines()
 
+# def restoreFolderVersion(folderPath, commitHash):
+#     folder = Path(folderPath).expanduser()
+
+#     if not isGitRepository(folder):
+#         print("Error: Folder is not a Git repository.")
+#         return False
+
+#     if not executeCommand(
+#         ["git", "reset", "--hard", commitHash],
+#         cwd=folder
+#     ):
+#         return False
+
+#     return executeCommand(
+#         ["git", "clean", "-fd"],
+#         cwd=folder
+#     )
 
 def restoreFolderVersion(folderPath, commitHash):
     folder = Path(folderPath).expanduser()
