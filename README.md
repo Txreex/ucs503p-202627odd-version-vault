@@ -1,5 +1,3 @@
-Absolutely. Replace your current `README.md` with this:
-
 ```markdown
 # VersionVault
 
@@ -132,7 +130,7 @@ The Finder integration uses Apple's FinderSync framework and therefore requires 
 Clone the repository:
 
 ```bash
-git clone <REPOSITORY_URL>
+git clone https://github.com/Txreex/ucs503p-202627odd-version-vault.git
 ```
 
 Enter the project directory:
