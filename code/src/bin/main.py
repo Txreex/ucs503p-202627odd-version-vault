@@ -39,6 +39,7 @@ Single File Commands:
     vv save <file-path>
     vv history <file-path>
     vv restore <commit-hash> <file-path>
+    vv is-tracked <path>
 
 Folder Commands:
     vv track-folder <folder-path>
@@ -56,13 +57,38 @@ def main():
         return 1
 
     command = sys.argv[1]
+    
+    
+    # ========================================================
+    # TRACKING STATUS
+    # ========================================================
+
+    elif_placeholder = False
+    
+    # vv is-tracked <path>
+    if command == "is-tracked":
+        if len(sys.argv) != 3:
+            print("Usage: vv is-tracked <path>")
+            return 1
+
+        path = sys.argv[2]
+        existingItem = getItemByPath(path)
+
+        if existingItem:
+            print("tracked")
+        else:
+            print("untracked")
+
+        return 0
+
+
 
     # ========================================================
     # INIT
     # ========================================================
 
     # vv init
-    if command == "init":
+    elif command == "init":
 
         if initRepo(REPO_PATH):
             print("Repository initialized successfully.")

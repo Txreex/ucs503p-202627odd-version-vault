@@ -4,7 +4,7 @@ import FinderSync
 
 class FinderSync: FIFinderSync {
 
-    private let appGroup = "group.com.versionvault.shared"
+    private let appGroup = "group.com.ridham.versionvault.shared"
 
     override init() {
 
@@ -25,26 +25,96 @@ class FinderSync: FIFinderSync {
         print("================================")
 
     }
-
+  
     // =========================================================
 
     // MENU
 
     // =========================================================
 
+    
+    // MARK: - Tracking Status
+
+    private func trackingStatus(for url: URL) -> Bool? {
+        let process = Process()
+
+        process.executableURL = URL(
+            fileURLWithPath: "/usr/local/bin/vv"
+        )
+
+        process.arguments = [
+            "is-tracked",
+            url.path
+        ]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+
+            let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0,
+                  let output = String(
+                    data: outputData,
+                    encoding: .utf8
+                  )?.trimmingCharacters(in: .whitespacesAndNewlines)
+            else {
+                return nil
+            }
+
+            switch output {
+            case "tracked":
+                return true
+            case "untracked":
+                return false
+            default:
+                return nil
+            }
+        } catch {
+            NSLog(
+                "VersionVault tracking check failed: %@",
+                error.localizedDescription
+            )
+            return nil
+        }
+    }
+
     override func menu(for menuKind: FIMenuKind) -> NSMenu? {
+        NSLog("VVDEBUG: menu(for:) called: %@", String(describing: menuKind))
 
         guard menuKind == .contextualMenuForItems else {
-
+            NSLog("VVDEBUG: Not a file-items context menu")
             return nil
-
         }
 
-        guard let selectedURL = selectedItem() else {
+        let selectedURLs = FIFinderSyncController.default().selectedItemURLs()
 
+        NSLog("VVDEBUG: Selected URLs: %@", String(describing: selectedURLs))
+
+        guard let selectedURL = selectedURLs?.first else {
+            NSLog("VVDEBUG: No selected file; returning nil")
             return nil
-
         }
+
+        // Keep all your existing code below this point.
+
+//    //override func menu(for menuKind: FIMenuKind) -> NSMenu? {
+//
+//        guard menuKind == .contextualMenuForItems else {
+//
+//            return nil
+//
+//        }
+
+//        guard let selectedURL = selectedItem() else {
+//
+//            return nil
+//
+//        }
 
         let isFolder = isDirectory(selectedURL)
 
@@ -98,16 +168,18 @@ class FinderSync: FIFinderSync {
 
         if !isFolder {
 
-            addItem(
+            let trackedStatus = trackingStatus(for: selectedURL)
 
-                to: versionVaultMenu,
+            if trackedStatus != true {
+                
+                addItem(
+                    to: versionVaultMenu,
+                    title: "Track",
+                    action: #selector(trackAction)
+                )
+            }
 
-                title: "Track",
-
-                action: #selector(trackAction)
-
-            )
-
+            
             addItem(
 
                 to: versionVaultMenu,
@@ -136,16 +208,16 @@ class FinderSync: FIFinderSync {
 
             // =================================================
 
-            addItem(
+            let trackedStatus = trackingStatus(for: selectedURL)
 
-                to: versionVaultMenu,
-
-                title: "Track Folder",
-
-                action: #selector(trackFolderAction)
-
-            )
-
+            if trackedStatus != true {
+                addItem(
+                    to: versionVaultMenu,
+                    title: "Track Folder",
+                    action: #selector(trackFolderAction)
+                )
+            }
+            
             addItem(
 
                 to: versionVaultMenu,
