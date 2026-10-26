@@ -6,7 +6,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var timer: Timer?
 
     private let appGroup =
-        "group.com.versionvault.shared"
+        "group.com.ridham.versionvault.shared"
 
     // =========================================================
     // APP LAUNCH
@@ -63,6 +63,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forSecurityApplicationGroupIdentifier:
                 appGroup
         )
+    }
+    private func checkForTrackedRequest() {
+        guard let c = appGroupContainer() else { return }
+        let req = c.appendingPathComponent("tracked_request.txt")
+        let res = c.appendingPathComponent("tracked_response.txt")
+        guard let text = try? String(contentsOf: req, encoding: .utf8) else { return }
+        try? FileManager.default.removeItem(at: req)
+        let path = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return }
+        let out = executeCLI(arguments: ["is-tracked", path]).output
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        try? "\(path)\n\(out)".write(to: res, atomically: true, encoding: .utf8)
     }
 
     // =========================================================
