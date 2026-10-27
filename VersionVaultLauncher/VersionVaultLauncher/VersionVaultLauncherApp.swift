@@ -41,17 +41,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startRequestWatcher() {
 
-        timer = Timer.scheduledTimer(
-            withTimeInterval: 0.05,
-            repeats: true
-        ) { [weak self] _ in
+            timer = Timer.scheduledTimer(
+                withTimeInterval: 0.05,
+                repeats: true
+            ) { [weak self] _ in
 
-            self?.checkForHistoryRequest()
-            self?.checkForNormalRequest()
+                self?.checkForHistoryRequest()
+                self?.checkForNormalRequest()
+                self?.checkForTrackedRequest() // ADD THIS LINE
+            }
+
+            print("Request watcher started")
         }
-
-        print("Request watcher started")
-    }
 
     // =========================================================
     // APP GROUP
