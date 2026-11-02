@@ -59,83 +59,119 @@ Folder Commands:
 
 Ignore Commands:
 
-    vv ignore <folder-path> <file-or-folder>
-    vv ignore <folder-path> <file-or-folder> --remove
+    vv ignore <file-or-folder-path>
+    vv ignore <file-or-folder-path> --remove
 """)
 
 
-def updateGitIgnore(folderPath, pattern, remove=False):
+# ============================================================
+# FIND TRACKED PARENT
+# ============================================================
+
+def findTrackedParent(selectedPath):
     """
-    Add or remove a rule in .gitignore.
+    Walk up the directory tree and find the nearest ancestor
+    registered as a tracked VersionVault folder.
 
-    When adding a rule, remove matching ignored files from
-    Git's index without deleting them from the filesystem.
+    Returns the absolute path of the tracked folder, or None.
     """
 
-    folder = Path(folderPath).expanduser().resolve()
+    selected = Path(selectedPath).expanduser().resolve()
 
-    if not folder.is_dir():
-        print("Error: Folder does not exist.")
+    if not selected.exists():
+        print(f"Error: Path does not exist: {selected}")
+        return None
+
+    current = selected if selected.is_dir() else selected.parent
+
+    while True:
+        currentPath = str(current)
+
+        item = getItemByPath(currentPath)
+
+        if item and item[1] == "folder":
+            return current
+
+        parent = current.parent
+
+        if parent == current:
+            break
+
+        current = parent
+
+    print("Error: No tracked VersionVault parent folder found.")
+    return None
+
+
+# ============================================================
+# IGNORE / UNIGNORE
+# ============================================================
+
+def updateGitIgnore(selectedPath, remove=False):
+    """
+    Ignore a selected file or directory inside a tracked folder.
+
+    The selected path can be anywhere inside the tracked folder.
+    The CLI resolves the tracked parent automatically.
+
+    Files are removed from Git's index only when they match
+    the new ignore rule. They are never deleted from disk.
+    """
+
+    selected = Path(selectedPath).expanduser().resolve()
+
+    if not selected.exists():
+        print(f"Error: Path does not exist: {selected}")
         return False
 
-    if not (folder / ".git").exists():
-        print("Error: Folder is not a Git repository.")
+    trackedRoot = findTrackedParent(selected)
+
+    if trackedRoot is None:
         return False
 
-    pattern = pattern.strip()
-
-    if not pattern:
-        print("Error: Ignore pattern cannot be empty.")
+    try:
+        relativePath = selected.relative_to(trackedRoot)
+    except ValueError:
+        print("Error: Selected path is outside the tracked folder.")
         return False
 
-    # Convert absolute paths inside the folder to relative paths.
-    candidate = Path(pattern).expanduser()
+    if not relativePath.parts:
+        print("Error: Cannot ignore the tracked folder itself.")
+        return False
 
-    if candidate.is_absolute():
-        candidate = candidate.resolve()
+    # Git uses forward slashes in ignore patterns.
+    relativePattern = relativePath.as_posix()
 
-        try:
-            pattern = candidate.relative_to(folder).as_posix()
-        except ValueError:
-            print("Error: Path must be inside the tracked folder.")
-            return False
-
-    # Prevent relative paths from escaping the tracked folder.
-    if not any(char in pattern for char in ("*", "?", "[")):
-        normalized = pattern.rstrip("/")
-
-        if normalized:
-            candidate = (folder / normalized).resolve()
-
-            try:
-                pattern = candidate.relative_to(folder).as_posix()
-            except ValueError:
-                print("Error: Path must be inside the tracked folder.")
-                return False
-
-    gitignore = folder / ".gitignore"
-
-    # Read existing rules.
-    if gitignore.exists():
-        try:
-            content = gitignore.read_text(encoding="utf-8")
-        except OSError as error:
-            print(f"Error reading .gitignore: {error}")
-            return False
+    if selected.is_dir():
+        # A trailing slash specifies a directory.
+        ignorePattern = f"/{relativePattern}/"
     else:
-        content = ""
+        ignorePattern = f"/{relativePattern}"
+
+    gitignore = trackedRoot / ".gitignore"
+
+    # Read existing .gitignore rules.
+    try:
+        content = (
+            gitignore.read_text(encoding="utf-8")
+            if gitignore.exists()
+            else ""
+        )
+    except OSError as error:
+        print(f"Error reading .gitignore: {error}")
+        return False
 
     lines = content.splitlines()
 
     if remove:
-        # Remove matching rules.
+        # Remove only the rule created for this exact path.
         updatedLines = [
             line for line in lines
-            if line.strip() != pattern
+            if line.strip() != ignorePattern
         ]
 
         if len(updatedLines) == len(lines):
-            print("Ignore rule not found.")
+            print(f"Ignore rule not found: {ignorePattern}")
             return False
 
         updatedContent = "\n".join(updatedLines)
@@ -152,40 +188,36 @@ def updateGitIgnore(folderPath, pattern, remove=False):
             print(f"Error updating .gitignore: {error}")
             return False
 
-        # Stage the changed .gitignore.
         if not executeCommand(
             ["git", "add", "--", ".gitignore"],
-            cwd=folder
+            cwd=trackedRoot
         ):
             print("Error staging .gitignore.")
             return False
 
-        print(f"Removed ignore rule: {pattern}")
+        print(f"Removed ignore rule: {ignorePattern}")
         print("Run vv save-folder to save the change.")
 
         return True
 
-    # Don't add duplicate rules.
-    if pattern in [line.strip() for line in lines]:
-        print(f"Ignore rule already exists: {pattern}")
-    else:
+    # Add the rule if it doesn't already exist.
+    if ignorePattern not in lines:
         try:
-            with gitignore.open(
-                "a",
-                encoding="utf-8"
-            ) as file:
+            with gitignore.open("a", encoding="utf-8") as file:
                 if content and not content.endswith("\n"):
                     file.write("\n")
 
-                file.write(pattern + "\n")
+                file.write(ignorePattern + "\n")
 
         except OSError as error:
             print(f"Error updating .gitignore: {error}")
             return False
 
-        print(f"Added ignore rule: {pattern}")
+        print(f"Added ignore rule: {ignorePattern}")
+    else:
+        print(f"Ignore rule already exists: {ignorePattern}")
 
-    # Find tracked files that are now ignored.
+    # Find files that Git currently tracks but now ignores.
     result = subprocess.run(
         [
             "git",
@@ -194,7 +226,7 @@ def updateGitIgnore(folderPath, pattern, remove=False):
             "--exclude-standard",
             "-z"
         ],
-        cwd=folder,
+        cwd=trackedRoot,
         capture_output=True
     )
 
@@ -202,15 +234,32 @@ def updateGitIgnore(folderPath, pattern, remove=False):
         print("Error checking tracked files.")
         return False
 
-    ignoredFiles = [
+    trackedIgnoredFiles = [
         path.decode("utf-8", errors="surrogateescape")
         for path in result.stdout.split(b"\0")
         if path
     ]
 
-    # Remove only ignored files from the index.
-    # Their actual filesystem contents are preserved.
-    if ignoredFiles:
+    # Restrict removal to the selected file or selected directory.
+    selectedRelative = relativePath.as_posix()
+
+    if selected.is_dir():
+        selectedPrefix = selectedRelative.rstrip("/") + "/"
+
+        pathsToUntrack = [
+            path for path in trackedIgnoredFiles
+            if path == selectedRelative
+            or path.startswith(selectedPrefix)
+        ]
+    else:
+        pathsToUntrack = [
+            path for path in trackedIgnoredFiles
+            if path == selectedRelative
+        ]
+
+    # Remove only matching paths from the index.
+    # --cached preserves files on the actual filesystem.
+    if pathsToUntrack:
         result = subprocess.run(
             [
                 "git",
@@ -219,40 +268,43 @@ def updateGitIgnore(folderPath, pattern, remove=False):
                 "--cached",
                 "--ignore-unmatch",
                 "--",
-                *ignoredFiles
+                *pathsToUntrack
             ],
-            cwd=folder,
+            cwd=trackedRoot,
             capture_output=True,
             text=True
         )
 
         if result.returncode != 0:
-            print(
-                "Error removing ignored files from Git index:",
-                result.stderr
-            )
+            print("Error updating Git index:")
+            print(result.stderr)
             return False
 
         print(
-            f"Untracked {len(ignoredFiles)} ignored file(s) "
+            f"Removed {len(pathsToUntrack)} ignored path(s) "
             "from Git's index. Files remain on disk."
         )
     else:
-        print("No currently tracked ignored files need untracking.")
+        print("No tracked files needed to be removed from the index.")
 
-    # Stage .gitignore so the rule is included in the next version.
+    # Stage .gitignore for the next folder version.
     if not executeCommand(
         ["git", "add", "--", ".gitignore"],
-        cwd=folder
+        cwd=trackedRoot
     ):
         print("Error staging .gitignore.")
         return False
 
-    print("Ignore rule applied successfully.")
-    print('Run vv save-folder "<folder-path>" "<message>" to commit it.')
+    print(f"Ignore rule applied to: {selected}")
+    print(f"Tracked folder: {trackedRoot}")
+    print('Run vv save-folder "<folder>" "<message>" to commit it.')
 
     return True
 
+
+# ============================================================
+# MAIN CLI
+# ============================================================
 
 def main():
 
@@ -262,9 +314,9 @@ def main():
 
     command = sys.argv[1]
 
-    # ========================================================
+    # --------------------------------------------------------
     # INIT
-    # ========================================================
+    # --------------------------------------------------------
 
     if command == "init":
 
@@ -272,10 +324,11 @@ def main():
             print("Repository initialized successfully.")
         else:
             print("Failed to initialize repository.")
+            return 1
 
-    # ========================================================
+    # --------------------------------------------------------
     # SINGLE FILE TRACK
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "track":
 
@@ -296,27 +349,19 @@ def main():
 
         fileId = generateItemId("file")
 
-        if not trackFile(
-            REPO_PATH,
-            fileId,
-            filePath
-        ):
+        if not trackFile(REPO_PATH, fileId, filePath):
             print("Failed to track file.")
             return 1
 
-        if not addItem(
-            fileId,
-            "file",
-            filePath
-        ):
+        if not addItem(fileId, "file", filePath):
             print("Failed to register file in database.")
             return 1
 
         print(f"File tracked successfully with ID: {fileId}")
 
-    # ========================================================
+    # --------------------------------------------------------
     # SINGLE FILE SAVE
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "save":
 
@@ -335,20 +380,15 @@ def main():
             print("Error: Path is not a tracked file.")
             return 1
 
-        fileId = item[0]
-
-        if saveVersion(
-            REPO_PATH,
-            fileId,
-            filePath
-        ):
+        if saveVersion(REPO_PATH, item[0], filePath):
             print("New version saved successfully.")
         else:
             print("Failed to save version.")
+            return 1
 
-    # ========================================================
+    # --------------------------------------------------------
     # SINGLE FILE HISTORY
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "history":
 
@@ -367,12 +407,7 @@ def main():
             print("Error: Path is not a tracked file.")
             return 1
 
-        fileId = item[0]
-
-        history = getHistory(
-            REPO_PATH,
-            fileId
-        )
+        history = getHistory(REPO_PATH, item[0])
 
         if not history:
             print("No version history found.")
@@ -384,34 +419,28 @@ def main():
         for i, commit in enumerate(history):
             print(f"{i + 1}. {commit}")
 
-    # ========================================================
+    # --------------------------------------------------------
     # SINGLE FILE RESTORE
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "restore":
 
         if len(sys.argv) != 4:
-            print(
-                "Usage: vv restore "
-                "<commit-hash> <file-path>"
-            )
+            print("Usage: vv restore <commit-hash> <file-path>")
             return 1
 
         commitHash = sys.argv[2]
         filePath = sys.argv[3]
 
-        if restoreVersion(
-            REPO_PATH,
-            commitHash,
-            filePath
-        ):
+        if restoreVersion(REPO_PATH, commitHash, filePath):
             print("Version restored successfully.")
         else:
             print("Failed to restore version.")
+            return 1
 
-    # ========================================================
+    # --------------------------------------------------------
     # FOLDER TRACK
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "track-folder":
 
@@ -419,7 +448,7 @@ def main():
             print("Usage: vv track-folder <folder-path>")
             return 1
 
-        folderPath = sys.argv[2]
+        folderPath = str(Path(sys.argv[2]).expanduser().resolve())
         existingItem = getItemByPath(folderPath)
 
         if existingItem:
@@ -435,11 +464,7 @@ def main():
 
         folderId = generateItemId("folder")
 
-        if not addItem(
-            folderId,
-            "folder",
-            folderPath
-        ):
+        if not addItem(folderId, "folder", folderPath):
             print("FAILED: Could not register folder.")
             return 1
 
@@ -448,9 +473,9 @@ def main():
             f"with ID: {folderId}"
         )
 
-    # ========================================================
+    # --------------------------------------------------------
     # FOLDER STATUS
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "status":
 
@@ -474,17 +499,14 @@ def main():
         else:
             print("No changes detected.")
 
-    # ========================================================
+    # --------------------------------------------------------
     # FOLDER SAVE
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "save-folder":
 
         if len(sys.argv) != 4:
-            print(
-                'Usage: vv save-folder '
-                '<folder-path> "<message>"'
-            )
+            print('Usage: vv save-folder <folder-path> "<message>"')
             return 1
 
         folderPath = sys.argv[2]
@@ -500,25 +522,20 @@ def main():
             print("Error: Path is not a tracked folder.")
             return 1
 
-        if saveFolderVersion(
-            folderPath,
-            message
-        ):
+        if saveFolderVersion(folderPath, message):
             print("SUCCESS: Folder version saved.")
         else:
             print("FAILED: Could not save version.")
+            return 1
 
-    # ========================================================
+    # --------------------------------------------------------
     # FOLDER HISTORY
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "history-folder":
 
         if len(sys.argv) != 3:
-            print(
-                "Usage: vv history-folder "
-                "<folder-path>"
-            )
+            print("Usage: vv history-folder <folder-path>")
             return 1
 
         folderPath = sys.argv[2]
@@ -544,9 +561,9 @@ def main():
         for i, commit in enumerate(history):
             print(f"{i + 1}. {commit}")
 
-    # ========================================================
+    # --------------------------------------------------------
     # FOLDER RESTORE
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "restore-folder":
 
@@ -570,59 +587,38 @@ def main():
             print("Error: Path is not a tracked folder.")
             return 1
 
-        if restoreFolderVersion(
-            folderPath,
-            commitHash
-        ):
+        if restoreFolderVersion(folderPath, commitHash):
             print("SUCCESS: Folder restored.")
         else:
             print("FAILED: Could not restore version.")
+            return 1
 
-    # ========================================================
+    # --------------------------------------------------------
     # IGNORE / UNIGNORE
-    # ========================================================
+    # --------------------------------------------------------
 
     elif command == "ignore":
 
-        if len(sys.argv) not in (4, 5):
+        if len(sys.argv) not in (3, 4):
             print(
-                "Usage: vv ignore <folder-path> "
-                "<file-or-folder> [--remove]"
+                "Usage: vv ignore <file-or-folder-path> [--remove]"
             )
             return 1
 
-        folderPath = sys.argv[2]
-        pattern = sys.argv[3]
+        selectedPath = sys.argv[2]
 
-        remove = (
-            len(sys.argv) == 5
-            and sys.argv[4] == "--remove"
-        )
-
-        if len(sys.argv) == 5 and not remove:
+        if len(sys.argv) == 4 and sys.argv[3] != "--remove":
             print("Error: The only supported option is --remove.")
             return 1
 
-        item = getItemByPath(folderPath)
+        remove = len(sys.argv) == 4
 
-        if not item:
-            print("Error: Folder is not being tracked.")
+        if not updateGitIgnore(selectedPath, remove):
             return 1
 
-        if item[1] != "folder":
-            print("Error: Path is not a tracked folder.")
-            return 1
-
-        if not updateGitIgnore(
-            folderPath,
-            pattern,
-            remove
-        ):
-            return 1
-
-    # ========================================================
+    # --------------------------------------------------------
     # UNKNOWN COMMAND
-    # ========================================================
+    # --------------------------------------------------------
 
     else:
         print(f"Unknown command: {command}")
