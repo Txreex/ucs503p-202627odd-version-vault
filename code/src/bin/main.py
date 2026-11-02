@@ -59,6 +59,7 @@ Folder Commands:
 
 Ignore Commands:
 
+    vv can-ignore <file-path>
     vv ignore <file-or-folder-path>
     vv ignore <file-or-folder-path> --remove
 """)
@@ -101,6 +102,30 @@ def findTrackedParent(selectedPath):
 
     print("Error: No tracked VersionVault parent folder found.")
     return None
+
+
+# ============================================================
+# FIND WHETHER A FILE CAN BE IGNORED FROM FINDER
+# ============================================================
+
+def canIgnorePath(selectedPath):
+    """Return True only for an existing file inside a registered tracked folder."""
+    selected = Path(selectedPath).expanduser().resolve()
+
+    if not selected.exists() or not selected.is_file():
+        return False
+
+    current = selected.parent
+
+    while True:
+        item = getItemByPath(str(current))
+        if item and len(item) > 1 and item[1] == "folder":
+            return True
+
+        parent = current.parent
+        if parent == current:
+            return False
+        current = parent
 
 
 # ============================================================
@@ -592,6 +617,21 @@ def main():
         else:
             print("FAILED: Could not restore version.")
             return 1
+
+    # --------------------------------------------------------
+    # FINDER IGNORE ELIGIBILITY CHECK
+    # Prints exactly true/false for the Swift request handler.
+    # --------------------------------------------------------
+
+    elif command == "can-ignore":
+
+        if len(sys.argv) != 3:
+            print("false")
+            return 1
+
+        eligible = canIgnorePath(sys.argv[2])
+        print("true" if eligible else "false")
+        return 0 if eligible else 1
 
     # --------------------------------------------------------
     # IGNORE / UNIGNORE
