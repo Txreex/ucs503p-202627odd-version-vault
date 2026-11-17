@@ -585,6 +585,8 @@ class FinderSync: FIFinderSync {
 
             )
 
+            launchVersionVault()
+
         } catch {
 
             print(
@@ -1172,6 +1174,25 @@ class FinderSync: FIFinderSync {
             argument: commit
         )
     }
+    // Start the installed host app so it can consume queued Finder requests.
+    // This is a fallback for when the user has quit VersionVaultLauncher.
+    private func launchVersionVault() {
+        let appURL = URL(fileURLWithPath: "/Applications/VersionVaultLauncher.app")
+        guard FileManager.default.fileExists(atPath: appURL.path) else {
+            print("ERROR: VersionVaultLauncher.app is not installed in /Applications")
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
+            if let error = error {
+                print("ERROR LAUNCHING VERSIONVAULT: \(error.localizedDescription)")
+            }
+        }
+    }
+
     // WRITE NORMAL REQUEST
 
     // =========================================================
@@ -1233,6 +1254,8 @@ class FinderSync: FIFinderSync {
                 encoding: .utf8
 
             )
+
+            launchVersionVault()
 
             print("================================")
 
